@@ -3,6 +3,7 @@ from typing import List as TList
 from nbtlib import File
 from nbtlib.tag import *
 import os,requests
+import time
 
 def download(url:str)->str:
     get_response = requests.get(url,stream=True)
@@ -12,6 +13,38 @@ def download(url:str)->str:
             if chunk: # filter out keep-alive new chunks
                 f.write(chunk)
     return file_name
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371 * 1000
+    dLat = deg2rad(lat2-lat1)
+    dLon = deg2rad(lon2-lon1)
+    a = math.sin(dLat/2) * math.sin(dLat/2) +\
+        math.cos(deg2rad(lat1)) * math.cos(deg2rad(lat2)) *\
+        math.sin(dLon/2) * math.sin(dLon/2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    d = R * c
+    return d
+
+def deg2rad(deg):
+    return deg * (math.pi/180)
+
+def get_origin_point(bbox: dict, origin: tuple):
+    origin_x = haversine(bbox['minLat'], bbox['minLon'], origin[0], bbox['minLon'])
+    origin_y = haversine(bbox['minLat'], bbox['minLon'], bbox['minLat'], origin[1])
+    return (origin_y,origin_x)
+
+def filter_by_distance(blocks: TList[TList[int]], origin: tuple, radius)->TList[TList[int]]:
+    filtered_blocks = []
+
+    for block in blocks:
+        x_d = (block[0]-origin[0]) ** 2
+        y_d = (block[2]-origin[1]) ** 2
+        dist = math.sqrt(x_d + y_d)
+        if dist <= radius:
+            filtered_blocks.append(block)
+
+    print(f'Blocks within a radius of {radius}: {len(filtered_blocks)}')
+    return filtered_blocks
 
 def write_as_nbt(name:str,block:str,blocks:TList[TList[int]],x_size:int,z_size:int,y_size:int):
 
@@ -38,60 +71,89 @@ def write_as_nbt(name:str,block:str,blocks:TList[TList[int]],x_size:int,z_size:i
     file_to_write.save(f'./schematics/{name}.nbt')
 
 if __name__ == "__main__":
+    start = time.time()
 
+    origin = (41.07707069512237, -85.11757983000066, 41.07707069512237, -85.11757983000066)
 
+    radius = 100
 
-    # bbox = '-85.11924233672808,41.078807366445303,-85.11924233672808,41.078807366445303'
-    # dataset = 'Lidar%20Point%20Cloud%20%28LPC%29'
+    bbox = f'{origin[1]},{origin[0]},{origin[3]},{origin[2]}'
+
+    # print(f'Does {bbox} == -85.11757983000066,41.07707069512237,-85.11757983000066,41.07707069512237: {bbox == "-85.11757983000066,41.07707069512237,-85.11757983000066,41.07707069512237"}')
+    # bbox = '-85.11757983000066,41.07707069512237,-85.11757983000066,41.07707069512237'
+    dataset = 'Lidar%20Point%20Cloud%20%28LPC%29'
 
     # gets item list json from api
-    # URL = f'https://tnmaccess.nationalmap.gov/api/v1/products?bbox={bbox}&datasets={dataset}&outputFormat=JSON'
+    URL = f'https://tnmaccess.nationalmap.gov/api/v1/products?bbox={bbox}&datasets={dataset}&outputFormat=JSON'
 
-    # rq = requests.get(url = URL)
-    # js = rq.json()
+    rq = requests.get(url = URL)
+    js = rq.json()
 
-    # sb_URL = js['sciencebaseQuery']
+    sb_URL = js['sciencebaseQuery']
 
-    # rq = requests.get(url= sb_URL)
-    # js = rq.json()
+    rq = requests.get(url= sb_URL)
+    js = rq.json()
 
-    # #TODO: choose which item to use (not just the first)
-    # item = js['items'][0]
+    #TODO: choose which item to use (not just the first)
+    item = js['items'][0]
+    print(f'Data title: {item["title"]}')
+
+    bbox = item['spatial']['boundingBox']
+    bbox = {
+        'minLat': float(bbox['minY']),
+        'maxLat': float(bbox['maxY']),
+        'minLon': float(bbox['minX']),
+        'maxLon': float(bbox['maxX'])
+    }
+
+    origin_point = get_origin_point(bbox, origin)
     
-    # weblinks = item['webLinks']
+    weblinks = item['webLinks']
 
-    # d_link = None
-    # for link in weblinks:
-    #     if link['type'] == 'download' and link['title'] == 'LAZ':
-    #         d_link = link['uri']
-    #         break
+    d_link = None
+    for link in weblinks:
+        if link['type'] == 'download' and link['title'] == 'LAZ':
+            d_link = link['uri']
+            break
 
-    # laz_zip = download(d_link)
-    # laz_txt = f'{laz_zip[:-3]}txt'
+    laz_zip = download(d_link)
+    laz_txt = f'{laz_zip[:-3]}txt'
 
-    laz_txt = 'USGS_LPC_Eastern_Indiana_QL3_Lidar__in2012_04752120_12.txt'
+    # laz_txt = 'USGS_LPC_Eastern_Indiana_QL3_Lidar__in2012_04752120_12.txt'
 
-    # las_cmd = f'laszip -i ".\\{laz_zip}" -otxt -oparse xyz'
-    # os.system(las_cmd)
+    las_cmd = f'laszip -i ".\\{laz_zip}" -otxt -oparse xyz'
+    os.system(las_cmd)
 
     data_file = open(laz_txt, 'r')
 
     data = data_file.read()
 
-    data = data.split('\n')[::10]
+    data = data.split('\n')
 
-    print(f'size: {len(data)}')
+    print(f'raw size: {len(data)}')
 
-    survey_m = (3937/1200)
+    survey_m = (1200/3937)
 
-    data_int = [[int(float(da)*survey_m) for da in dat.split(' ') if da] for dat in data if dat]
+    data_int = [([int(float(da)*survey_m) for da in dat.split(' ') if da]) for dat in data if dat]
 
     min_x = min(data_int, key= lambda t: t[0])[0]
     min_y = min(data_int, key= lambda t: t[1])[1]
     min_z = min(data_int, key= lambda t: t[2])[2]
-    #TODO: find correct factors
-    # Flips y and z data
-    data_int = [[(dat[0]-min_x)//10, (dat[2]-min_z)//10, (dat[1]-min_y)//100] for dat in data_int]
+    
+    # Flip y and z data, and normalize data
+    data_int = [[(dat[0]-min_x), (dat[2]-min_z), (dat[1]-min_y)] for dat in data_int]
+
+    data_int = filter_by_distance(data_int, origin_point, radius)
+
+    if not data_int:
+        raise Exception('No blocks within radius')
+
+    min_x = min(data_int, key= lambda t: t[0])[0]
+    min_y = min(data_int, key= lambda t: t[1])[1]
+    min_z = min(data_int, key= lambda t: t[2])[2]
+
+    # re-normalize data
+    data_int = [[(dat[0]-min_x), (dat[1]-min_y), (dat[2]-min_z)] for dat in data_int]
 
     min_x = min(data_int, key= lambda t: t[0])[0]
     min_y = min(data_int, key= lambda t: t[1])[1]
@@ -107,3 +169,7 @@ if __name__ == "__main__":
     print(f'x: {max_x}, y: {max_y}, z: {max_z}')
 
     write_as_nbt((laz_txt[:-4]).lower(), 'minecraft:white_wool', data_int, x_size=max_x, y_size=max_y, z_size=max_z)
+
+    end = time.time()
+
+    print(f'Runtime: {end-start:0.2f} s')
