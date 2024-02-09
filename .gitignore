@@ -1,0 +1,5 @@
+laszip.exe
+*.laz
+*.txt
+/schematics
+test
