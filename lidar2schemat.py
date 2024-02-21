@@ -46,41 +46,76 @@ def filter_by_distance(blocks: TList[TList[int]], origin: tuple, radius)->TList[
     print(f'Blocks within a radius of {radius}: {len(filtered_blocks)}')
     return filtered_blocks
 
-def write_as_nbt(name:str,block:str,blocks:TList[TList[int]],x_size:int,z_size:int,y_size:int):
+def write_as_nbt(name:str,block,blocks:TList[TList[int]],x_size:int,z_size:int,y_size:int, data_ver:int):
 
-    palette = List[Compound]([
-        {
-            'Name': String(block)
-        }
-    ])
+    palette = None
+    if data_ver == 3578:
+        palette = List[Compound]([
+            {
+                'Name': String(block)
+            }
+        ])
+    elif data_ver == 1343:
+        if type(block) != list:
+            raise Exception('Expected block to be a list')
+        palette = List[Compound]([
+            {
+                'Properties': Compound(
+                {
+                    'color': String(block[0])
+                }),
+                'Name': String(block[1])
+            }
+        ])
+    else:
+        raise Exception('unsupported data version')
     
-    file_to_write = File(Compound({
-        "": Compound({
-            'size': List[Int]([
-                x_size,
-                y_size,
-                z_size
-            ]),
-            'blocks': List([Compound({'state': Int(0), 'pos': List[Int](block)}) for block in blocks]),
-            'palette': palette,
-            'entities': List([]),
-            'DataVersion': Int(3578)
+    file_to_write = None
+
+    if data_ver == 3578:
+        file_to_write = File(Compound({
+            "": Compound({
+                'size': List[Int]([
+                    x_size,
+                    y_size,
+                    z_size
+                ]),
+                'blocks': List([Compound({'state': Int(0), 'pos': List[Int](block)}) for block in blocks]),
+                'palette': palette,
+                'entities': List([]),
+                'DataVersion': Int(data_ver)
+                })
+        }), gzipped=True)
+    elif data_ver == 1343:
+        file_to_write = File(Compound({
+            "": Compound({
+                'size': List[Int]([
+                    x_size,
+                    y_size,
+                    z_size
+                ]),
+                'blocks': List([Compound({'state': Int(0), 'pos': List[Int](block)}) for block in blocks]),
+                'palette': palette,
+                'entities': List([]),
+                'DataVersion': Int(data_ver),
+                'ForgeDataVersion': Compound({
+                    'minecraft': Int(data_ver)
+                }),
+                'author': 'lidar2schemat'
             })
-    }), gzipped=True)
+        }), gzipped=True)
+    else:
+        raise Exception('unsupported data version')
 
     file_to_write.save(f'./schematics/{name}.nbt')
 
-if __name__ == "__main__":
+def main(data_ver:int, block):
     start = time.time()
 
     origin = (41.07707069512237, -85.11757983000066, 41.07707069512237, -85.11757983000066)
-
     radius = 100
 
     bbox = f'{origin[1]},{origin[0]},{origin[3]},{origin[2]}'
-
-    # print(f'Does {bbox} == -85.11757983000066,41.07707069512237,-85.11757983000066,41.07707069512237: {bbox == "-85.11757983000066,41.07707069512237,-85.11757983000066,41.07707069512237"}')
-    # bbox = '-85.11757983000066,41.07707069512237,-85.11757983000066,41.07707069512237'
     dataset = 'Lidar%20Point%20Cloud%20%28LPC%29'
 
     # gets item list json from api
@@ -162,14 +197,20 @@ if __name__ == "__main__":
     if min_x != 0 or min_y != 0 or min_z != 0:
         raise Exception("Start not at 0")
 
-    max_x = max(data_int, key= lambda t: t[0])[0]
-    max_y = max(data_int, key= lambda t: t[1])[1]
-    max_z = max(data_int, key= lambda t: t[2])[2]
+    max_x = max(data_int, key= lambda t: t[0])[0] + 1
+    max_y = max(data_int, key= lambda t: t[1])[1] + 1
+    max_z = max(data_int, key= lambda t: t[2])[2] + 1
 
     print(f'x: {max_x}, y: {max_y}, z: {max_z}')
 
-    write_as_nbt((laz_txt[:-4]).lower(), 'minecraft:white_wool', data_int, x_size=max_x, y_size=max_y, z_size=max_z)
+    write_as_nbt((laz_txt[:-4]).lower(), block, data_int, x_size=max_x, y_size=max_y, z_size=max_z, data_ver=data_ver)
 
     end = time.time()
 
     print(f'Runtime: {end-start:0.2f} s')
+
+
+
+if __name__ == "__main__":
+    # main(3578, 'minecraft:white_wool')
+    main(1343, ['white','minecraft:wool'])

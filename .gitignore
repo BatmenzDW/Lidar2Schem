@@ -1,5 +1,6 @@
 laszip.exe
 *.laz
 *.txt
+*.nbt
 /schematics
 test
