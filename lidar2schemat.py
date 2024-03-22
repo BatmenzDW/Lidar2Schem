@@ -5,6 +5,11 @@ from nbtlib.tag import *
 import os,requests
 import time
 
+# states that use international foot instead of survery foot: 
+#       OR, AZ, MT, ND, MI, SC
+# states with no foot type specified:
+#       MO, AK, AL, HI, [All Non-state juristictions]
+
 def download(url:str)->str:
     get_response = requests.get(url,stream=True)
     file_name  = url.split("/")[-1]
@@ -101,7 +106,7 @@ def write_as_nbt(name:str,block,blocks:TList[TList[int]],x_size:int,z_size:int,y
                 'ForgeDataVersion': Compound({
                     'minecraft': Int(data_ver)
                 }),
-                'author': 'lidar2schemat'
+                'author': String('lidar2schemat')
             })
         }), gzipped=True)
     else:
@@ -109,11 +114,8 @@ def write_as_nbt(name:str,block,blocks:TList[TList[int]],x_size:int,z_size:int,y
 
     file_to_write.save(f'./schematics/{name}.nbt')
 
-def main(data_ver:int, block):
+def main(data_ver:int, block, radius:int, origin:tuple):
     start = time.time()
-
-    origin = (41.07707069512237, -85.11757983000066, 41.07707069512237, -85.11757983000066)
-    radius = 100
 
     bbox = f'{origin[1]},{origin[0]},{origin[3]},{origin[2]}'
     dataset = 'Lidar%20Point%20Cloud%20%28LPC%29'
@@ -174,6 +176,8 @@ def main(data_ver:int, block):
     min_x = min(data_int, key= lambda t: t[0])[0]
     min_y = min(data_int, key= lambda t: t[1])[1]
     min_z = min(data_int, key= lambda t: t[2])[2]
+
+    print(f'min x: {min_x}, min y: {min_z}, min z: {min_y}')
     
     # Flip y and z data, and normalize data
     data_int = [[(dat[0]-min_x), (dat[2]-min_z), (dat[1]-min_y)] for dat in data_int]
@@ -212,5 +216,5 @@ def main(data_ver:int, block):
 
 
 if __name__ == "__main__":
-    # main(3578, 'minecraft:white_wool')
-    main(1343, ['white','minecraft:wool'])
+    # main(3578, 'minecraft:white_wool', 100, (41.07707069512237, -85.11757983000066, 41.07707069512237, -85.11757983000066))
+    main(1343, ['white','minecraft:wool'], 50, (41.07707069512237, -85.11757983000066, 41.07707069512237, -85.11757983000066))
