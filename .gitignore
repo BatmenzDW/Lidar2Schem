@@ -5,3 +5,5 @@ laszip.exe
 /schematics
 test
 terraplusplus-1.1.0.578-1.12.2.zip
+*.pyc
+lzmaTest.py

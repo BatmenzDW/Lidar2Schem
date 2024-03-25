@@ -1,18 +1,19 @@
 import math
 import math as Math
+import numpy as np
 from typing import List as TList
 from nbtlib import File
 from nbtlib.tag import *
 import os,requests
+import lzma
 import time
+
+import projectionConstants
 
 # states that use international foot instead of survery foot: 
 #       OR, AZ, MT, ND, MI, SC
 # states with no foot type specified:
 #       MO, AK, AL, HI, [All Non-state juristictions]
-
-def deg2rad(deg):
-    return deg * (math.pi/180)
 
 def checkInRange(x, y, maxX, maxY):
     if (abs(x) > maxX or abs(y) > maxY):
@@ -26,22 +27,16 @@ class MathUtils:
     TAU = 2 * math.pi
 
     # Converts geographic latitude and longitude coordinates to spherical coordinates on a sphere of radius 1
-    def geo2Spherical(geo: list):
-        h_phi = geo[0]
-        h_theta = 90 - geo[1]
-        if geo[0] < 0: h_phi = geo[0] + 360
-        phi = math.radians(h_phi)
-        theta = math.radians(h_theta)
+    def geo2Spherical(geo):
+        theta = math.radians(geo[0])
+        phi = math.radians(90 - geo[1])
         return [ theta, phi ]
-    
-    def spherical2Geo(spherical):
-        pass
 
     def spherical2Cartesian(spherical):
         sinphi = math.sin(spherical[1])
         x = sinphi * math.cos(spherical[0])
         y = sinphi * math.sin(spherical[0])
-        z = math.cos(spherical[0])
+        z = math.cos(spherical[1])
         return [ x, y, z ]
     
     def cartesian2Spherical(cartesian: list):
@@ -57,7 +52,7 @@ class MathUtils:
         sinc = Math.sin(c)
         cosc = Math.cos(c)
 
-        mat = [[0.0] * 3] * 3
+        mat = [[0.0 for i in range(3)] for j in range(3)]
         mat[0][0] = cosa * cosb * cosc - sinc * sina
         mat[0][1] = -sina * cosb * cosc - sinc * cosa
         mat[0][2] = cosc * sinb
@@ -73,7 +68,7 @@ class MathUtils:
         return mat
     
     def matVecProdD(matrix: list, vector: list):
-        result = [0.0] * len(vector)
+        result = [0.0 for i in range(len(vector))]
         for i in range(len(result)):
             for j in range(len(matrix[i])):
                 result[i] += matrix[i][j] * vector[j]
@@ -81,6 +76,9 @@ class MathUtils:
         return result
 
 class DymaxionProjection:
+
+    def __init__(self) -> None:
+        pass
 
     def yRot(spherical: list, rot):
         c = MathUtils.spherical2Cartesian(spherical)
@@ -96,7 +94,7 @@ class DymaxionProjection:
 
         return [ math.atan2(c[1], c[0]), math.atan2(math.sqrt(c[0] * c[0] + c[1] * c[1]), c[2]) ]
 
-    ARC = 2 * math.asin(math.sqrt(5 - math.sqrt(5))/math.sqrt(10))
+    ARC = 2 * math.asin(math.sqrt(5 - math.sqrt(5)) / math.sqrt(10))
     Z = math.sqrt(5 + 2 * math.sqrt(5)) / math.sqrt(15)
     EL = math.sqrt(8) / math.sqrt(5 + math.sqrt(5))
     EL6 = EL / 6
@@ -191,14 +189,14 @@ class DymaxionProjection:
         This contains the Cartesian coordinates the centroid
         of each face of the icosahedron.
     '''
-    CENTROIDS = [[0.0] * 3] * 22
+    CENTROIDS = [[0.0 for j in range(3)] for k in range(22)]
 
     '''
         Rotation matrices to move the triangles to the reference coordinates from the original positions.
         Indexed by the face's indices.
     '''
-    ROTATION_MATRICES = [[[0.0]*3]*3]*22
-    INVERSE_ROTATION_MATRICES = [[[0.0]*3]*3]*22
+    ROTATION_MATRICES = [[[0.0 for i in range(3)] for j in range(3)] for k in range(22)]
+    INVERSE_ROTATION_MATRICES = [[[0.0 for i in range(3)] for j in range(3)] for k in range(22)]
 
     FACE_ON_GRID = [
             -1, -1, 0, 1, 2, -1, -1, 3, -1, 4, -1,
@@ -206,13 +204,12 @@ class DymaxionProjection:
             20, 19, 15, 21, 16, -1, 17, 18, -1, -1, -1,
     ]
 
-    # def __init__(this):
     for i in range(1, 22):
         CENTER_MAP[i][0] *= 0.5 * ARC
         CENTER_MAP[i][1] *= ARC * MathUtils.ROOT3 / 12
         
         # Will contain the list of vertices in Cartesian coordinates
-    verticesCartesian = [[None] * 3] * len(VERTICES)
+    verticesCartesian = [[None for i in range(3)] for j in range(len(VERTICES))]
 
         # Convert the geographic vertices to spherical in radians
     for i in range(len(VERTICES)):
@@ -246,9 +243,10 @@ class DymaxionProjection:
         ROTATION_MATRICES[i] = MathUtils.produceZYZRotationMatrix(-centroidLambda, -centroidPhi, (Math.pi / 2) - v[0])
         INVERSE_ROTATION_MATRICES[i] = MathUtils.produceZYZRotationMatrix(v[0] - (Math.pi / 2), centroidPhi, centroidLambda)
 
-    def findTriangle(vector: list)->int:
+    def findTriangle(self, vector: list)->int:
         min = float("inf")
         face = 0
+        
         for i in range(20):
             xd = DymaxionProjection.CENTROIDS[i][0] - vector[0]
             yd = DymaxionProjection.CENTROIDS[i][1] - vector[1]
@@ -265,44 +263,45 @@ class DymaxionProjection:
 
         return face
 
-    def triangleTransform(vec):
-        S = DymaxionProjection.Z / vec[2]
+    def triangleTransform(self, vec):
+        s = DymaxionProjection.Z / vec[2]
 
-        xp = S * vec[0]
-        yp = S * vec[1]
-
+        xp = s * vec[0]
+        yp = s * vec[1]
+    
         a = Math.atan((2 * yp / MathUtils.ROOT3 - DymaxionProjection.EL6) / DymaxionProjection.DVE)
         b = Math.atan((xp - yp / MathUtils.ROOT3 - DymaxionProjection.EL6) / DymaxionProjection.DVE)
         c = Math.atan((-xp - yp / MathUtils.ROOT3 - DymaxionProjection.EL6) / DymaxionProjection.DVE)
 
         return [0.5 * (b - c), (2 * a - b - c) / (2 * MathUtils.ROOT3)]
 
-    def fromGeo(longitude, latitude):
+    def fromGeo(self, longitude, latitude):
         checkLongitudeLatitudeInRange(longitude, latitude)
 
         vector = MathUtils.spherical2Cartesian(MathUtils.geo2Spherical([ longitude, latitude ]))
 
-        face = DymaxionProjection.findTriangle(vector)
+        face = self.findTriangle(vector)
 
         # apply rotation matrix (move triangle onto template triangle)
-        pvec = MathUtils.matVecProdD(DymaxionProjection.ROTATION_MATRICES[face], vector)
-        projectedVec = DymaxionProjection.triangleTransform(pvec)
+        pvec = MathUtils.matVecProdD(self.ROTATION_MATRICES[face], vector)
+        projectedVec = self.triangleTransform(pvec)
 
         # flip triangle to correct orientation
-        if (DymaxionProjection.FLIP_TRIANGLE[face]):
+        if (self.FLIP_TRIANGLE[face]):
             projectedVec[0] = -projectedVec[0]
             projectedVec[1] = -projectedVec[1]
 
         vector[0] = projectedVec[0]
 
         # deal with special snowflakes (child faces 20, 21)
-        if (((face == 15 and vector[0] > projectedVec[1] * MathUtils.ROOT3) or face == 14) and vector[0] > 0):
+        if (((face == 15 and (vector[0] > projectedVec[1] * MathUtils.ROOT3)) or face == 14) and vector[0] > 0):
             projectedVec[0] = 0.5 * vector[0] - 0.5 * MathUtils.ROOT3 * projectedVec[1]
             projectedVec[1] = 0.5 * MathUtils.ROOT3 * vector[0] + 0.5 * projectedVec[1]
             face += 6 #shift 14->20 & 15->21
+            print(f"snowflake: {face}")
 
-        projectedVec[0] += DymaxionProjection.CENTER_MAP[face][0]
-        projectedVec[1] += DymaxionProjection.CENTER_MAP[face][1]
+        projectedVec[0] += self.CENTER_MAP[face][0]
+        projectedVec[1] += self.CENTER_MAP[face][1]
 
         return projectedVec
 
@@ -310,21 +309,107 @@ class ConformalDynmaxionProjection(DymaxionProjection):
     VECTOR_SCALE_FACTOR = 1.0 / 1.1473979730192934
     SIDE_LENGTH = 256
 
-    #
-    #
-    #
+    # TODO: load inverse matrix from file
+
+    def __init__(self) -> None:
+        self.inverse = self.InvertableVectorField([])
+        super().__init__()
+
+    def triangleTransform(self, vec):
+        c = super().triangleTransform(vec)
+        x = c[0]
+        y = c[1]
+
+        c[0] /= DymaxionProjection.ARC
+        c[1] /= DymaxionProjection.ARC
+
+        c[0] += 0.5
+        c[1] += MathUtils.ROOT3 / 6
 
     class InvertableVectorField:
-        
-        def __init__(this, vx: list, vy: list):
-            this.vx = vx
-            this.vy = vy
 
-        def getInterpolatedVector(x, y):
-            pass
+        def __init__(self, vx, vy) -> None:
+            self.vx = vx
+            self.vy = vy
+
+        def getInterpolatedVector(self, x, y):
+            SIDE_LENGTH = ConformalDynmaxionProjection.SIDE_LENGTH
+            # scale up triangle to be triangleSize across
+            x *= ConformalDynmaxionProjection.SIDE_LENGTH
+            y *= ConformalDynmaxionProjection.SIDE_LENGTH
+
+            # convert to triangle units
+            v = 2 * y / MathUtils.ROOT3
+            u = x - v * 0.5
+
+            u1 = int(u)
+            v1 = int(v)
+
+            if u1 < 0: 
+                u1 = 0
+            elif u1 >= ConformalDynmaxionProjection.SIDE_LENGTH: 
+                u1 = ConformalDynmaxionProjection.SIDE_LENGTH - 1
+
+            if v1 < 0:
+                v1 = 0
+            elif v1 >= ConformalDynmaxionProjection.SIDE_LENGTH - u1:
+                v1 = ConformalDynmaxionProjection.SIDE_LENGTH - u1 - 1
+            
+            flip = 1
+
+            if (y < -MathUtils.ROOT3 * (x - u1 - v1 - 1) or v1 == ConformalDynmaxionProjection.SIDE_LENGTH - u1 - 1):
+                valx1 = self.vx[u1][v1]
+                valy1 = self.vy[u1][v1]
+                valx2 = self.vx[u1][v1 + 1]
+                valy2 = self.vy[u1][v1 + 1]
+                valx3 = self.vx[u1 + 1][v1]
+                valy3 = self.vy[u1 + 1][v1]
+
+                y3 = 0.5 * MathUtils.ROOT3 * v1
+                x3 = (u1 + 1) + 0.5 * v1
+            else:
+                valx1 = self.vx[u1][v1 + 1]
+                valy1 = self.vy[u1][v1 + 1]
+                valx2 = self.vx[u1 + 1][v1]
+                valy2 = self.vy[u1 + 1][v1]
+                valx3 = self.vx[u1 + 1][v1 + 1]
+                valy3 = self.vy[u1 + 1][v1 + 1]
+
+                flip = -1
+                y = -y
+
+                y3 = -(0.5 * MathUtils.ROOT3 * (v1 + 1))
+                x3 = (u1 + 1) + 0.5 * (v1 + 1)
+
+            w1 = -(y - y3) / MathUtils.ROOT3 - (x - x3)
+            w2 = 2 * (y - y3) / MathUtils.ROOT3
+            w3 = 1 - w1 - w2
+
+            return [ valx1 * w1 + valx2 * w2 + valx3 * w3, valy1 * w1 + valy2 * w2 + valy3 * w3,
+                    (valx3 - valx1) * SIDE_LENGTH, SIDE_LENGTH * flip * (2 * valx2 - valx1 - valx3) / MathUtils.ROOT3,
+                    (valy3 - valy1) * SIDE_LENGTH, SIDE_LENGTH * flip * (2 * valy2 - valy1 - valy3) / MathUtils.ROOT3 ]
+        
+        def applyNewtonsMethod(self, expectedf, expectedg, xest, yest, iter):
+            for i in range(iter):
+                c = self.getInterpolatedVector(xest, yest)
+
+                f = c[0] - expectedf
+                g = c[1] - expectedg
+                dfdx = c[2]
+                dfdy = c[3]
+                dgdx = c[4]
+                dgdy = c[5]
+
+                determinant = 1 / (dfdx * dgdy - dfdy * dgdx)
+
+                xest -= determinant * (dgdy * f - dfdy * g)
+                yest -= determinant * (-dgdx * f + dfdx * g)
+
+            return [ xest, yest ]
+
 
 class BTEDymaxionProjection(ConformalDynmaxionProjection):
-    THETA = deg2rad(-150)
+    THETA = math.radians(-150)
     SIN_THETA = Math.sin(THETA)
     COS_THETA = Math.cos(THETA)
     BERING_X = -0.3420420960118339 #-0.3282152608138795
@@ -338,32 +423,37 @@ class BTEDymaxionProjection(ConformalDynmaxionProjection):
     ALEUTIAN_M = (BERING_Y - ALEUTIAN_Y) / (BERING_X - ALEUTIAN_XR)
     ALEUTIAN_B = BERING_Y - ALEUTIAN_M * BERING_X
     # {"projection":{"scale":{"delegate":{"flip_vertical":{"delegate":{"bte_conformal_dymaxion":{}}}},"x":7318261.522857145,"y":7318261.522857145}},"useDefaultHeights":true,"useDefaultTreeCover":true,"skipChunkPopulation":["ICE"],"skipBiomeDecoration":["TREE"],"version":2}
+    # SCALE = {"x":7318261.522857145,"y":7318261.522857145}
     SCALE = {"x":7318261.522857145,"y":7318261.522857145}
 
-    def fromGeo(longitude, latitude):
-        c = DymaxionProjection.fromGeo(longitude, latitude)
+    def __init__(self) -> None:
+        super().__init__()
+
+    def fromGeo(self, longitude, latitude):
+        c = super(BTEDymaxionProjection, self).fromGeo(longitude, latitude)
 
         x = c[0]
         y = c[1]
 
-        easia = BTEDymaxionProjection.isEurasianPart(x, y)
+        print(f"x: {x}, y: {y}")
 
-        print(f"is easia: {easia}")
+        # easia = BTEDymaxionProjection.isEurasianPart(x, y)
 
-        y -= 0.75 * DymaxionProjection.ARC * MathUtils.ROOT3
+        y -= (0.75 * DymaxionProjection.ARC * math.sqrt(3))
 
-        if (easia):
+        if (False):
             x += DymaxionProjection.ARC
 
             t = x
             x = BTEDymaxionProjection.COS_THETA * x - BTEDymaxionProjection.SIN_THETA * y
             y = BTEDymaxionProjection.SIN_THETA * t + BTEDymaxionProjection.COS_THETA * y
-
         else:
             x -= DymaxionProjection.ARC
 
-        c[0] = y * BTEDymaxionProjection.SCALE["x"]
-        c[1] = x * BTEDymaxionProjection.SCALE["y"]
+        # print(f"x: {y}, y: {x}")
+
+        c[0] = y * 7318261.522857145
+        c[1] = x * 7318261.522857145 # - - cancel out
         
         return c
 
@@ -399,10 +489,10 @@ def download(url:str)->str:
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371 * 1000
-    dLat = deg2rad(lat2-lat1)
-    dLon = deg2rad(lon2-lon1)
+    dLat = math.radians(lat2-lat1)
+    dLon = math.radians(lon2-lon1)
     a = math.sin(dLat/2) * math.sin(dLat/2) +\
-        math.cos(deg2rad(lat1)) * math.cos(deg2rad(lat2)) *\
+        math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *\
         math.sin(dLon/2) * math.sin(dLon/2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     d = R * c
@@ -588,10 +678,25 @@ def main(data_ver:int, block, radius:int, origin:tuple):
 
     print(f'Runtime: {end-start:0.2f} s')
 
-
-
 if __name__ == "__main__":
     # main(3578, 'minecraft:white_wool', 100, (41.07707069512237, -85.11757983000066, 41.07707069512237, -85.11757983000066))
     # main(1343, ['white','minecraft:wool'], 50, (41.07707069512237, -85.11757983000066, 41.07707069512237, -85.11757983000066))
-    location = BTEDymaxionProjection.fromGeo(-85.05945366396479, 41.180103596175286)
+    
+    # -9481521 -5876387
+    # 41.180103596175286, -85.05945366396479
+    # dif: 109548.18762981237
+
+    # -9484965 -5864078
+    # 41.07703106760974 -85.11730362468673
+    # dif: 110549.3594007249
+
+    # -9484948 -5864078
+    # 41.07697040994484 -85.11711050563768
+    # dif: 110553.8017136039
+    proj = BTEDymaxionProjection()
+
+    location = proj.fromGeo(-85.11711050563768, 41.07697040994484)
     print(location)
+    difx, dify = location[0] - -9484948, location[1] - -5864078
+    dif = math.sqrt(difx * difx + dify * dify)
+    print(f"dif: {dif}")
