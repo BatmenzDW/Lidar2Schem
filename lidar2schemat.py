@@ -6,9 +6,8 @@ from nbtlib import File
 from nbtlib.tag import *
 import os,requests
 import lzma
+import struct
 import time
-
-import projectionConstants
 
 # states that use international foot instead of survery foot: 
 #       OR, AZ, MT, ND, MI, SC
@@ -310,21 +309,35 @@ class ConformalDynmaxionProjection(DymaxionProjection):
     SIDE_LENGTH = 256
 
     # TODO: load inverse matrix from file
-
+    
     def __init__(self) -> None:
-        self.inverse = self.InvertableVectorField([])
         super().__init__()
+        self.inverse = self.getInverseCache()
 
     def triangleTransform(self, vec):
+        ARC = DymaxionProjection.ARC
+
         c = super().triangleTransform(vec)
         x = c[0]
         y = c[1]
 
-        c[0] /= DymaxionProjection.ARC
-        c[1] /= DymaxionProjection.ARC
+        c[0] /= ARC
+        c[1] /= ARC
 
         c[0] += 0.5
         c[1] += MathUtils.ROOT3 / 6
+
+        c = self.inverse.applyNewtonsMethod(x, y, c[0], c[1], 5)
+
+        c[0] -= 0.5
+        c[1] -= MathUtils.ROOT3 / 6
+
+        c[0] *= ARC
+        c[1] *= ARC
+
+        print(f"transformed: {c}")
+
+        return c
 
     class InvertableVectorField:
 
@@ -385,9 +398,12 @@ class ConformalDynmaxionProjection(DymaxionProjection):
             w2 = 2 * (y - y3) / MathUtils.ROOT3
             w3 = 1 - w1 - w2
 
-            return [ valx1 * w1 + valx2 * w2 + valx3 * w3, valy1 * w1 + valy2 * w2 + valy3 * w3,
-                    (valx3 - valx1) * SIDE_LENGTH, SIDE_LENGTH * flip * (2 * valx2 - valx1 - valx3) / MathUtils.ROOT3,
-                    (valy3 - valy1) * SIDE_LENGTH, SIDE_LENGTH * flip * (2 * valy2 - valy1 - valy3) / MathUtils.ROOT3 ]
+            return [ valx1 * w1 + valx2 * w2 + valx3 * w3,
+                     valy1 * w1 + valy2 * w2 + valy3 * w3,
+                     (valx3 - valx1) * SIDE_LENGTH,
+                     SIDE_LENGTH * flip * (2 * valx2 - valx1 - valx3) / MathUtils.ROOT3,
+                     (valy3 - valy1) * SIDE_LENGTH, 
+                     SIDE_LENGTH * flip * (2 * valy2 - valy1 - valy3) / MathUtils.ROOT3 ]
         
         def applyNewtonsMethod(self, expectedf, expectedg, xest, yest, iter):
             for i in range(iter):
@@ -406,6 +422,21 @@ class ConformalDynmaxionProjection(DymaxionProjection):
                 yest -= determinant * (-dgdx * f + dfdx * g)
 
             return [ xest, yest ]
+
+    def getInverseCache(self)->InvertableVectorField:
+        SIDE_LENGTH = ConformalDynmaxionProjection.SIDE_LENGTH
+        VECTOR_SCALE_FACTOR = ConformalDynmaxionProjection.VECTOR_SCALE_FACTOR
+        vx = [[0.0 for p in range(SIDE_LENGTH + 1 - i)] for i in range(SIDE_LENGTH + 1)]
+        vy = [[0.0 for p in range(SIDE_LENGTH + 1 - i)] for i in range(SIDE_LENGTH + 1)]
+        with open("conformal.lzma", "rb") as compressed:
+            with lzma.LZMAFile(compressed, "rb") as buf:
+                for v in range(SIDE_LENGTH + 1):
+                    for u in range(SIDE_LENGTH + 1 - v):
+                        vx[u][v] = struct.unpack('>d',buf.read(8))[0]  * VECTOR_SCALE_FACTOR
+                        vy[u][v] = struct.unpack('>d',buf.read(8))[0] * VECTOR_SCALE_FACTOR
+
+        return self.InvertableVectorField(vx, vy)
+
 
 
 class BTEDymaxionProjection(ConformalDynmaxionProjection):
@@ -693,6 +724,7 @@ if __name__ == "__main__":
     # -9484948 -5864078
     # 41.07697040994484 -85.11711050563768
     # dif: 110553.8017136039
+
     proj = BTEDymaxionProjection()
 
     location = proj.fromGeo(-85.11711050563768, 41.07697040994484)
