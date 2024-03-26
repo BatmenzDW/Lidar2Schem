@@ -1,6 +1,4 @@
 import math
-import math as Math
-import numpy as np
 from typing import List as TList
 from nbtlib import File
 from nbtlib.tag import *
@@ -8,20 +6,13 @@ import os,requests
 import time
 
 from BTEDymaxionProjection import BTEDymaxionProjection
+from LAZObject import LAZObject
+from Util import *
 
 # states that use international foot instead of survery foot: 
 #       OR, AZ, MT, ND, MI, SC
 # states with no foot type specified:
 #       MO, AK, AL, HI, [All Non-state juristictions]
-
-def download(url:str)->str:
-    get_response = requests.get(url,stream=True)
-    file_name  = url.split("/")[-1]
-    with open(file_name, 'wb') as f:
-        for chunk in get_response.iter_content(chunk_size=1024):
-            if chunk: # filter out keep-alive new chunks
-                f.write(chunk)
-    return file_name
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371 * 1000
@@ -148,19 +139,24 @@ def main(data_ver:int, block, radius:int, origin:tuple):
     
     weblinks = item['webLinks']
 
-    d_link = None
+    d_link, m_link = None, None
     for link in weblinks:
         if link['type'] == 'download' and link['title'] == 'LAZ':
             d_link = link['uri']
-            break
+            if m_link and d_link:
+                break
+            continue
+        if link['type'] == 'originalMetadata' and link['title'] == 'Product Metadata':
+            m_link = link['uri']
+            if m_link and d_link:
+                break
 
-    laz_zip = download(d_link)
-    laz_txt = f'{laz_zip[:-3]}txt'
+    Laz = LAZObject(d_link, m_link)
+    Laz.download()
+    Laz.parse_meta()
 
-    # laz_txt = 'USGS_LPC_Eastern_Indiana_QL3_Lidar__in2012_04752120_12.txt'
 
-    las_cmd = f'laszip -i ".\\{laz_zip}" -otxt -oparse xyz'
-    os.system(las_cmd)
+    return
 
     data_file = open(laz_txt, 'r')
 
@@ -215,25 +211,12 @@ def main(data_ver:int, block, radius:int, origin:tuple):
     print(f'Runtime: {end-start:0.2f} s')
 
 if __name__ == "__main__":
-    # main(3578, 'minecraft:white_wool', 100, (41.07707069512237, -85.11757983000066, 41.07707069512237, -85.11757983000066))
-    # main(1343, ['white','minecraft:wool'], 50, (41.07707069512237, -85.11757983000066, 41.07707069512237, -85.11757983000066))
-    
-    # -9481521 -5876387
-    # 41.180103596175286, -85.05945366396479
-    # dif: 109548.18762981237
+    main(1343, ['white','minecraft:wool'], 50, (41.07707069512237, -85.11757983000066, 41.07707069512237, -85.11757983000066))
 
-    # -9484965 -5864078
-    # 41.07703106760974 -85.11730362468673
-    # dif: 110549.3594007249
+    # proj = BTEDymaxionProjection()
 
-    # -9484948 -5864078
-    # 41.07697040994484 -85.11711050563768
-    # dif: 110553.8017136039
-
-    proj = BTEDymaxionProjection()
-
-    location = proj.fromGeo(-85.11711050563768, 41.07697040994484)
-    print(location)
-    difx, dify = location[0] - -9484948, location[1] - -5864078
-    dif = math.sqrt(difx * difx + dify * dify)
-    print(f"dif: {dif}")
+    # location = proj.fromGeo(-85.11711050563768, 41.07697040994484)
+    # print(location)
+    # difx, dify = location[0] - -9484948, location[1] - -5864078
+    # dif = math.sqrt(difx * difx + dify * dify)
+    # print(f"dif: {dif}")

@@ -1,7 +1,8 @@
-laszip.exe
 *.laz
 *.txt
 *.nbt
 /schematics
+/LAStools
 test
 *.pyc
+*.xml
