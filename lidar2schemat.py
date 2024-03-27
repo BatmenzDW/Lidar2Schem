@@ -153,8 +153,11 @@ def main(data_ver:int, block, radius:int, origin:tuple):
 
     Laz = LAZObject(d_link, m_link)
     Laz.download()
-    Laz.parse_meta()
+    # Laz.parse_meta()
+    # Laz.project()
+    latlong_data = Laz.read_latlong()
 
+    proj = BTEDymaxionProjection()
 
     return
 
@@ -212,8 +215,6 @@ def main(data_ver:int, block, radius:int, origin:tuple):
 
 if __name__ == "__main__":
     main(1343, ['white','minecraft:wool'], 50, (41.07707069512237, -85.11757983000066, 41.07707069512237, -85.11757983000066))
-
-    # proj = BTEDymaxionProjection()
 
     # location = proj.fromGeo(-85.11711050563768, 41.07697040994484)
     # print(location)

@@ -1,8 +1,6 @@
-*.laz
-*.txt
 *.nbt
 /schematics
 /LAStools
 test
 *.pyc
-*.xml
+/data/*
