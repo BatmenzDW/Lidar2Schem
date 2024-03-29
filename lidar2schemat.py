@@ -9,11 +9,6 @@ from BTEDymaxionProjection import BTEDymaxionProjection
 from LAZObject import LAZObject
 from Util import *
 
-# states that use international foot instead of survery foot: 
-#       OR, AZ, MT, ND, MI, SC
-# states with no foot type specified:
-#       MO, AK, AL, HI, [All Non-state juristictions]
-
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371 * 1000
     dLat = math.radians(lat2-lat1)
@@ -24,6 +19,12 @@ def haversine(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     d = R * c
     return d
+
+def haversine_longlat(long1, lat1, long2, lat2):
+    return haversine(lat1, long1, lat2, long2)
+
+def haversine_point(p1, p2):
+    return haversine_longlat(p1[0],p1[1],p2[1],p2[0])
 
 def get_origin_point(bbox: dict, origin: tuple):
     origin_x = haversine(bbox['minLat'], bbox['minLon'], origin[0], bbox['minLon'])
@@ -104,9 +105,9 @@ def write_as_nbt(name:str,block,blocks:TList[TList[int]],x_size:int,z_size:int,y
     else:
         raise Exception('unsupported data version')
 
-    file_to_write.save(f'./schematics/{name}.nbt')
+    file_to_write.save(f'{name}.nbt')
 
-def main(data_ver:int, block, radius:int, origin:tuple):
+def main(data_ver:int, block, radius:float, origin:tuple):
     start = time.time()
 
     bbox = f'{origin[1]},{origin[0]},{origin[3]},{origin[2]}'
@@ -134,8 +135,6 @@ def main(data_ver:int, block, radius:int, origin:tuple):
         'minLon': float(bbox['minX']),
         'maxLon': float(bbox['maxX'])
     }
-
-    origin_point = get_origin_point(bbox, origin)
     
     weblinks = item['webLinks']
 
@@ -153,71 +152,47 @@ def main(data_ver:int, block, radius:int, origin:tuple):
 
     Laz = LAZObject(d_link, m_link)
     Laz.download()
-    # Laz.parse_meta()
-    # Laz.project()
+    Laz.parse_meta()
+    Laz.project()
     latlong_data = Laz.read_latlong()
+
+    latlong_data = [data for data in latlong_data if haversine_point(data, origin) <= radius]
+
+    if not latlong_data:
+        raise Exception('No data withing radius.')
 
     proj = BTEDymaxionProjection()
 
-    return
+    proj_data = proj.fromGeoArray(latlong_data)
 
-    data_file = open(laz_txt, 'r')
+    min_x = min(proj_data, key= lambda t: t[0])[0]
+    min_y = min(proj_data, key= lambda t: t[2])[2]
+    min_z = min(proj_data, key= lambda t: t[1])[1]
 
-    data = data_file.read()
+    print(f'region origin: {min_x} {min_y} {min_z}')
 
-    data = data.split('\n')
-
-    print(f'raw size: {len(data)}')
-
-    survey_m = (1200/3937)
-
-    data_int = [([int(float(da)*survey_m) for da in dat.split(' ') if da]) for dat in data if dat]
-
-    min_x = min(data_int, key= lambda t: t[0])[0]
-    min_y = min(data_int, key= lambda t: t[1])[1]
-    min_z = min(data_int, key= lambda t: t[2])[2]
-
-    print(f'min x: {min_x}, min y: {min_z}, min z: {min_y}')
-    
     # Flip y and z data, and normalize data
-    data_int = [[(dat[0]-min_x), (dat[2]-min_z), (dat[1]-min_y)] for dat in data_int]
+    proj_data = [[data[0] - min_x, data[2] - min_y, data[1] - min_z] for data in proj_data]
 
-    data_int = filter_by_distance(data_int, origin_point, radius)
-
-    if not data_int:
-        raise Exception('No blocks within radius')
-
-    min_x = min(data_int, key= lambda t: t[0])[0]
-    min_y = min(data_int, key= lambda t: t[1])[1]
-    min_z = min(data_int, key= lambda t: t[2])[2]
-
-    # re-normalize data
-    data_int = [[(dat[0]-min_x), (dat[1]-min_y), (dat[2]-min_z)] for dat in data_int]
-
-    min_x = min(data_int, key= lambda t: t[0])[0]
-    min_y = min(data_int, key= lambda t: t[1])[1]
-    min_z = min(data_int, key= lambda t: t[2])[2]
+    min_x = min(proj_data, key= lambda t: t[0])[0]
+    min_y = min(proj_data, key= lambda t: t[1])[1]
+    min_z = min(proj_data, key= lambda t: t[2])[2]
 
     if min_x != 0 or min_y != 0 or min_z != 0:
         raise Exception("Start not at 0")
+    
+    max_x = max(proj_data, key= lambda t: t[0])[0] + 1
+    max_y = max(proj_data, key= lambda t: t[1])[1] + 1
+    max_z = max(proj_data, key= lambda t: t[2])[2] + 1
 
-    max_x = max(data_int, key= lambda t: t[0])[0] + 1
-    max_y = max(data_int, key= lambda t: t[1])[1] + 1
-    max_z = max(data_int, key= lambda t: t[2])[2] + 1
+    print(f'region size: {[max_x, max_y, max_z]}')
 
-    print(f'x: {max_x}, y: {max_y}, z: {max_z}')
-
-    write_as_nbt((laz_txt[:-4]).lower(), block, data_int, x_size=max_x, y_size=max_y, z_size=max_z, data_ver=data_ver)
+    write_as_nbt((Laz.laz_txt[:-4]).lower(), block, proj_data, x_size=max_x, y_size=max_y, z_size=max_z, data_ver=data_ver)
 
     end = time.time()
 
     print(f'Runtime: {end-start:0.2f} s')
+    return
 
 if __name__ == "__main__":
-    main(1343, ['white','minecraft:wool'], 50, (41.07707069512237, -85.11757983000066, 41.07707069512237, -85.11757983000066))
-
-    # location = proj.fromGeo(-85.11711050563768, 41.07697040994484)
-    # print(location)
-    # difx, dify = location[0] - -9484948, location[1] - -5864078
-    # dif = math.sqrt(difx * difx + dify * dify)
-    # print(f"dif: {dif}")
+    main(1343, ['white','minecraft:wool'], 100, (41.07445508951913, -85.14267195754964, 41.07445508951913, -85.14267195754964))

@@ -18,21 +18,26 @@ class BTEDymaxionProjection(ConformalDymaxionProjection):
     ALEUTIAN_XR = -0.45
     ALEUTIAN_M = (BERING_Y - ALEUTIAN_Y) / (BERING_X - ALEUTIAN_XR)
     ALEUTIAN_B = BERING_Y - ALEUTIAN_M * BERING_X
-    # {"projection":{"scale":{"delegate":{"flip_vertical":{"delegate":{"bte_conformal_dymaxion":{}}}},"x":7318261.522857145,"y":7318261.522857145}},"useDefaultHeights":true,"useDefaultTreeCover":true,"skipChunkPopulation":["ICE"],"skipBiomeDecoration":["TREE"],"version":2}
-    # SCALE = {"x":7318261.522857145,"y":7318261.522857145}
 
     def __init__(self) -> None:
         super().__init__()
 
-    def fromGeo(self, longitude, latitude):
+    def fromGeoArray(self, data:list)->list:
+        data_out = []
+        d = data[0]
+        for p in data:
+            c = self.fromGeo(p[0], p[1])
+            data_out.append([int(c[0]), int(c[1]), int(p[2])])
+
+        return data_out
+
+    def fromGeo(self, longitude:float, latitude:float):
         c = super(BTEDymaxionProjection, self).fromGeo(longitude, latitude)
 
         x = c[0]
         y = c[1]
 
-        print(f"x: {x}, y: {y}")
-
-        easia = BTEDymaxionProjection.isEurasianPart(x, y)
+        easia = self.isEurasianPart(x, y)
 
         y -= (0.75 * DymaxionProjection.ARC * math.sqrt(3))
 
@@ -45,12 +50,13 @@ class BTEDymaxionProjection(ConformalDymaxionProjection):
         else:
             x -= DymaxionProjection.ARC
 
+        # scale up
         c[0] = y * 7318261.522857145
         c[1] = x * 7318261.522857145 # - - cancel out
         
         return c
 
-    def isEurasianPart(x, y)->bool:
+    def isEurasianPart(self, x, y)->bool:
         # catch vast majority of cases in not near boundary
         if (x > 0):
             return False

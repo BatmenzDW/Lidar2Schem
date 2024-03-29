@@ -14,6 +14,7 @@ class ConformalDymaxionProjection(DymaxionProjection):
 
     def triangleTransform(self, vec):
         ARC = DymaxionProjection.ARC
+        ROOT3 = MathUtils.ROOT3
 
         c = super().triangleTransform(vec)
         x = c[0]
@@ -23,12 +24,12 @@ class ConformalDymaxionProjection(DymaxionProjection):
         c[1] /= ARC
 
         c[0] += 0.5
-        c[1] += MathUtils.ROOT3 / 6
+        c[1] += ROOT3 / 6
 
-        c = self.inverse.applyNewtonsMethod(x, y, c[0], c[1], 5)
+        c = self.inverse.applyNewtonsMethod(x, y, c[0], c[1], DymaxionProjection.NEWTON)
 
         c[0] -= 0.5
-        c[1] -= MathUtils.ROOT3 / 6
+        c[1] -= ROOT3 / 6
 
         c[0] *= ARC
         c[1] *= ARC
@@ -43,12 +44,13 @@ class ConformalDymaxionProjection(DymaxionProjection):
 
         def getInterpolatedVector(self, x, y):
             SIDE_LENGTH = ConformalDymaxionProjection.SIDE_LENGTH
+            ROOT3 = MathUtils.ROOT3
             # scale up triangle to be triangleSize across
-            x *= ConformalDymaxionProjection.SIDE_LENGTH
-            y *= ConformalDymaxionProjection.SIDE_LENGTH
+            x *= SIDE_LENGTH
+            y *= SIDE_LENGTH
 
             # convert to triangle units
-            v = 2 * y / MathUtils.ROOT3
+            v = 2 * y / ROOT3
             u = x - v * 0.5
 
             u1 = int(u)
@@ -87,19 +89,19 @@ class ConformalDymaxionProjection(DymaxionProjection):
                 flip = -1
                 y = -y
 
-                y3 = -(0.5 * MathUtils.ROOT3 * (v1 + 1))
+                y3 = -(0.5 * ROOT3 * (v1 + 1))
                 x3 = (u1 + 1) + 0.5 * (v1 + 1)
 
-            w1 = -(y - y3) / MathUtils.ROOT3 - (x - x3)
-            w2 = 2 * (y - y3) / MathUtils.ROOT3
+            w1 = -(y - y3) / ROOT3 - (x - x3)
+            w2 = 2 * (y - y3) / ROOT3
             w3 = 1 - w1 - w2
 
             return [ valx1 * w1 + valx2 * w2 + valx3 * w3,
                      valy1 * w1 + valy2 * w2 + valy3 * w3,
                      (valx3 - valx1) * SIDE_LENGTH,
-                     SIDE_LENGTH * flip * (2 * valx2 - valx1 - valx3) / MathUtils.ROOT3,
+                     SIDE_LENGTH * flip * (2 * valx2 - valx1 - valx3) / ROOT3,
                      (valy3 - valy1) * SIDE_LENGTH, 
-                     SIDE_LENGTH * flip * (2 * valy2 - valy1 - valy3) / MathUtils.ROOT3 ]
+                     SIDE_LENGTH * flip * (2 * valy2 - valy1 - valy3) / ROOT3 ]
         
         def applyNewtonsMethod(self, expectedf, expectedg, xest, yest, iter):
             for i in range(iter):

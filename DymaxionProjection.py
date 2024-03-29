@@ -217,6 +217,7 @@ class DymaxionProjection:
 
         # apply rotation matrix (move triangle onto template triangle)
         pvec = MathUtils.matVecProdD(self.ROTATION_MATRICES[face], vector)
+
         projectedVec = self.triangleTransform(pvec)
 
         # flip triangle to correct orientation
