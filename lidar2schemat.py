@@ -4,6 +4,7 @@ from nbtlib import File
 from nbtlib.tag import *
 import os,requests
 import time
+from datetime import datetime
 
 from BTEDymaxionProjection import BTEDymaxionProjection
 from LAZObject import LAZObject
@@ -107,6 +108,18 @@ def write_as_nbt(name:str,block,blocks:TList[TList[int]],x_size:int,z_size:int,y
 
     file_to_write.save(f'{name}.nbt')
 
+def get_publish_date(item):
+    try:
+        date = item["publicationDate"]
+    except:
+        dates = item["dates"]
+        for d in dates:
+            if d["label"] == 'Publication Date':
+                date = d['dateString']
+                break
+
+    return datetime.strptime(date, '%Y-%m-%d')
+
 def main(data_ver:int, block, radius:float, origin:tuple):
     start = time.time()
 
@@ -124,35 +137,35 @@ def main(data_ver:int, block, radius:float, origin:tuple):
     rq = requests.get(url= sb_URL)
     js = rq.json()
 
-    #TODO: choose which item to use (not just the first)
-    item = js['items'][0]
-    print(f'Data title: {item["title"]}')
+    items = js['items']
+    items = sorted(items, key=lambda item: get_publish_date(item), reverse=True)
+    titles = [i["title"] for i in items]
+    print(titles)
 
-    bbox = item['spatial']['boundingBox']
-    bbox = {
-        'minLat': float(bbox['minY']),
-        'maxLat': float(bbox['maxY']),
-        'minLon': float(bbox['minX']),
-        'maxLon': float(bbox['maxX'])
-    }
-    
-    weblinks = item['webLinks']
+    Laz = None
 
-    d_link, m_link = None, None
-    for link in weblinks:
-        if link['type'] == 'download' and link['title'] == 'LAZ':
-            d_link = link['uri']
-            if m_link and d_link:
-                break
+    for item in items:
+        print(f'Data title: {item["title"]}')
+        weblinks = item['webLinks']
+
+        d_link, m_link = get_links_from_json(weblinks)
+
+        Laz = LAZObject(d_link, m_link)
+        Laz.download()
+        try:
+            Laz.parse_meta()
+            break
+        except Exception as e:
+            if len(items) == 1:
+                print(e)
+            print("Skipped because of unsupported datum reference point")
+            Laz.clear_cache()
+            Laz = None
             continue
-        if link['type'] == 'originalMetadata' and link['title'] == 'Product Metadata':
-            m_link = link['uri']
-            if m_link and d_link:
-                break
 
-    Laz = LAZObject(d_link, m_link)
-    Laz.download()
-    Laz.parse_meta()
+    if Laz == None:
+        raise Exception("No Supported Data Sources in region")
+
     Laz.project()
     latlong_data = Laz.read_latlong()
 
@@ -189,10 +202,27 @@ def main(data_ver:int, block, radius:float, origin:tuple):
 
     write_as_nbt((Laz.laz_txt[:-4]).lower(), block, proj_data, x_size=max_x, y_size=max_y, z_size=max_z, data_ver=data_ver)
 
+    Laz.clear_cache()
+
     end = time.time()
 
     print(f'Runtime: {end-start:0.2f} s')
     return
 
+def get_links_from_json(weblinks):
+    d_link, m_link = None, None
+    for link in weblinks:
+        if link['type'] == 'download' and link['title'] == 'LAZ':
+            d_link = link['uri']
+            if m_link and d_link:
+                break
+            continue
+        if link['type'] == 'originalMetadata' and link['title'] == 'Product Metadata':
+            m_link = link['uri']
+            if m_link and d_link:
+                break
+
+    return (d_link, m_link)
+
 if __name__ == "__main__":
-    main(1343, ['white','minecraft:wool'], 100, (41.07445508951913, -85.14267195754964, 41.07445508951913, -85.14267195754964))
+    main(1343, ['white','minecraft:wool'], 100, (41.18003992132766, -85.05965948610825, 41.18003992132766, -85.05965948610825))

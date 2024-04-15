@@ -21,6 +21,11 @@ class LAZObject:
         self.laz_txt = f'{self.laz_zip[:-3]}txt'
         self.meta_xml = download(self.meta_link, 'data\\')
 
+    def clear_cache(self):
+        for file in [self.laz_zip, self.laz_proj, self.laz_txt, self.meta_xml]:
+            if os.path.exists(file):
+                os.remove(file)
+
     # def unzip(self):
     #     las_cmd = f'laszip -i ".\\{self.laz_zip}" -otxt -oparse xyz'
     #     os.system(las_cmd)
@@ -37,6 +42,9 @@ class LAZObject:
             self.datum_unit = 'US survey foot'
         self.proj_name = Bs_data.find('mapprojn').get_text()
 
+        if self.proj_name == "N/A":
+            raise Exception("N/A is not a supported map projection")
+
         print(f'unit: {self.datum_unit}')
         print(f'projection name: {self.proj_name}')
 
@@ -47,6 +55,9 @@ class LAZObject:
         # projection name: NAD83 / Indiana East (ftUS)
 
         # projection name: NAD83(2011) / Ohio North (ftUS)
+
+        # unit: foot
+        # projection name: NAD83(2011) / Michigan South (ft)
         
         spac_datum = None
         spac_ref = None
@@ -66,19 +77,37 @@ class LAZObject:
                 spac_ref = "IN_W"
                 print("Found ref: West Indiana")
             else:
-                raise Exception()
+                raise Exception(f"unknown reference datum: {self.proj_name}")
         elif re.search("(?i)Ohio", self.proj_name):
             if re.search("(?i)North", self.proj_name):
                 spac_ref = "OH_N"
                 print("Found ref: North Ohio")
+            elif re.search("(?i)South", self.proj_name):
+                spac_ref = "OH_S"
+                print("Found ref: South Ohio")
             else:
-                raise Exception()
+                raise Exception(f"unknown reference datum: {self.proj_name}")
+        elif re.search("(?i)Michigan", self.proj_name):
+            if re.search("(?i)North", self.proj_name):
+                spac_ref = "MI_N"
+                print("Found ref: North Michigan (UP)")
+            elif re.search("(?i)Central", self.proj_name):
+                spac_ref = "MI_C"
+                print("Found ref: Central Michigan")
+            elif re.search("(?i)South", self.proj_name):
+                spac_ref = "MI_S"
+                print("Found ref: South Michigan")
+            else:
+                raise Exception(f"unknown reference datum: {self.proj_name}")
         else:
-            raise Exception()
+            raise Exception(f"unknown reference datum: {self.proj_name}")
 
         if re.search("(?i)Survey", self.datum_unit):
             spac_unit = "-survey_feet"
             print("Found unit: Survey Feet")
+        elif re.search("(?i)Foot", self.datum_unit) or re.search("(?i)Feet", self.datum_unit):
+            spac_unit = "-feet"
+            print("Found unit: Feet")
 
         # for verbose: v = '-v'
         v = ''
