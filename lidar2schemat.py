@@ -2,7 +2,7 @@ import math
 from typing import List as TList
 from nbtlib import File
 from nbtlib.tag import *
-import os,requests
+import requests
 import time
 from datetime import datetime
 
@@ -120,7 +120,7 @@ def get_publish_date(item):
 
     return datetime.strptime(date, '%Y-%m-%d')
 
-def main(data_ver:int, block, radius:float, origin:tuple):
+def main(data_ver:int, block, radius:float, origin:tuple, stat_mode = False, proj_name=''):
     start = time.time()
 
     bbox = f'{origin[1]},{origin[0]},{origin[3]},{origin[2]}'
@@ -143,31 +143,33 @@ def main(data_ver:int, block, radius:float, origin:tuple):
     print(titles)
 
     Laz = None
+    total_count, working_count = len(items), 0
+
+    latlong_data = []
 
     for item in items:
         print(f'Data title: {item["title"]}')
         weblinks = item['webLinks']
 
-        d_link, m_link = get_links_from_json(weblinks)
+        d_link = get_links_from_json(weblinks)
 
-        Laz = LAZObject(d_link, m_link)
+        Laz = LAZObject(d_link)
         Laz.download()
         try:
-            Laz.parse_meta()
-            break
-        except Exception as e:
-            if len(items) == 1:
-                print(e)
-            print("Skipped because of unsupported datum reference point")
+            Laz.project()
+            t_latlong_data = Laz.read_latlong()
+            working_count += 1
+            if len(latlong_data) == 0:
+                latlong_data = t_latlong_data
+        except:
             Laz.clear_cache()
-            Laz = None
             continue
-
-    if Laz == None:
-        raise Exception("No Supported Data Sources in region")
-
-    Laz.project()
-    latlong_data = Laz.read_latlong()
+        Laz.clear_cache()
+    
+    if stat_mode:
+        with open('stats.txt', 'a') as stats:
+            stats.write(f'{proj_name}, {total_count}, {working_count}, {len(latlong_data)},\n')
+        return        
 
     latlong_data = [data for data in latlong_data if haversine_point(data, origin) <= radius]
 
@@ -212,17 +214,18 @@ def main(data_ver:int, block, radius:float, origin:tuple):
 def get_links_from_json(weblinks):
     d_link, m_link = None, None
     for link in weblinks:
-        if link['type'] == 'download' and link['title'] == 'LAZ':
+        if link['type'] == 'download' and (link['title'] == 'LAZ' or link['title'] == 'LAS'):
             d_link = link['uri']
             if m_link and d_link:
                 break
             continue
-        if link['type'] == 'originalMetadata' and link['title'] == 'Product Metadata':
-            m_link = link['uri']
-            if m_link and d_link:
-                break
+        # if link['type'] == 'originalMetadata' and link['title'] == 'Product Metadata':
+        #     m_link = link['uri']
+        #     if m_link and d_link:
+        #         break
 
-    return (d_link, m_link)
+    return (d_link)
 
 if __name__ == "__main__":
-    main(1343, ['white','minecraft:wool'], 100, (41.18003992132766, -85.05965948610825, 41.18003992132766, -85.05965948610825))
+    location = (41.07878457030188, -85.11883350065123)
+    main(1343, ['white','minecraft:wool'], 100, (location[0], location[1], location[0], location[1]))

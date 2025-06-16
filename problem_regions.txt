@@ -1,3 +1,2 @@
 Problem Regions:
-  - 41.368948730345835, -89.0632061075847:  Uses mercator projection instead
-  - 44.8368798144341, -84.5264468049255:    No specified projection
+  
