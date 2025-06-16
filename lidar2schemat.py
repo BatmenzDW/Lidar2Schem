@@ -5,6 +5,7 @@ from nbtlib.tag import *
 import requests
 import time
 from datetime import datetime
+import sys
 
 from BTEDymaxionProjection import BTEDymaxionProjection
 from LAZObject import LAZObject
@@ -226,6 +227,55 @@ def get_links_from_json(weblinks):
 
     return (d_link)
 
+def handle_block_arg(block:str):
+    if block == "wool":
+        return ['white','minecraft:wool']
+    
+    p = block.split("_")
+
+    if p[1] == "wool":
+        return [p[0], 'minecraft:wool']
+
+def handle_args(args:list):
+    """
+    Args:
+        latitude- float
+        longitude- float
+        radius- int
+        block(Optional)- minecraft block
+        stat_id(Optional)- area id name for stat debugging
+    """
+    args.pop(0)
+    args_len = len(args)
+
+    if args_len < 3:
+        if args[0] == "help" or args_len < 3:
+            print("""
+    Args:
+        latitude- float
+        longitude- float
+        radius- int
+        block(Optional)- minecraft block
+        stat_id(Optional)- area id name for stat debugging
+    """)
+            quit()
+
+    l = args[0].replace(",", "")
+    lon = float(args[0])
+    lat = float(args[1])
+    radius = int(args[2])
+
+    if args_len > 3:
+        block = handle_block_arg(args[3])
+
+        if args_len > 4:
+            stat_id = args[4]
+            return (lon, lat, radius, block, stat_id, True)
+        
+        return (lon, lat, radius, block, "", False)
+    
+    return (lon, lat, radius, block, ['white','minecraft:wool'], False)
+
 if __name__ == "__main__":
-    location = (41.07878457030188, -85.11883350065123)
-    main(1343, ['white','minecraft:wool'], 100, (location[0], location[1], location[0], location[1]))
+    args = handle_args(sys.argv)
+    main(1343, args[3], args[2], (args[0], args[1], args[0], args[1]), args[5], args[4])
